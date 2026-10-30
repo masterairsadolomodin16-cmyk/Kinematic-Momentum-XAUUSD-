@@ -6,7 +6,7 @@ import math
 import random
 import aiohttp
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
 from kinematic.models import TickData
 
@@ -62,7 +62,7 @@ class APISEDLiveConnector:
                 except Exception as e:
                     logger.warning(f"APISED live fetch error: {e}. Using live-price simulation fallback.")
 
-                # If live request fails, yield a simulated tick at the last known live price
+                # Fallback generator to keep the UI smooth if network limits outbound requests
                 if not success:
                     count += 1
                     fallback_price += random.gauss(0, 0.05)
