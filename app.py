@@ -1,16 +1,21 @@
 """Streamlit Main Entry Point — Kinematic Momentum XAUUSD Telemetry."""
 
 import asyncio
+import os
 import time
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 
 from kinematic.indicators import IndicatorSuite, KinematicEngine
-from kinematic.ingest import SimulatedTickGenerator
+from kinematic.ingest import SimulatedTickGenerator, ProductionWebsocketConnector
 from kinematic.models import TelemetryMetrics
 from kinematic.ui import render_telemetry_strip
 from kinematic.utils import RingBuffer
 from kinematic.visualization import build_telemetry_chart
+
+# Load environment variables
+load_dotenv()
 
 # Page Config
 st.set_page_config(
@@ -18,6 +23,19 @@ st.set_page_config(
     page_icon="⚡",
     layout="wide"
 )
+
+# Custom CSS injection for clean presentation interface (hiding default Streamlit branding)
+st.markdown("""
+    <style>
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        .block-container {
+            padding-top: 1.5rem;
+            padding-bottom: 1rem;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # Initialize Session State
 if "ring_buffer" not in st.session_state:
@@ -45,12 +63,21 @@ st.title("Kinematic Momentum — XAUUSD Tick Telemetry")
 hud_placeholder = st.empty()
 chart_placeholder = st.empty()
 
-# Streaming loop
+
 async def main_loop():
-    generator = SimulatedTickGenerator(tick_rate_hz=tick_rate)
+    """Main asynchronous ingestion and telemetry render loop."""
+    # Select stream source based on sidebar mode
+    if mode == "Simulator Mode":
+        stream_generator = SimulatedTickGenerator(tick_rate_hz=tick_rate).stream()
+    else:
+        api_key = os.getenv("APISED_API_KEY", "sk_Ef1FB50ec771Daf256E81B3d6Ede72c8857C123649454744")
+        websocket_uri = os.getenv("APISED_WEBSOCKET_URI", "wss://api.apised.com/v1/stream")
+        connector = ProductionWebsocketConnector(uri=websocket_uri, api_key=api_key)
+        stream_generator = connector.connect_and_stream()
+
     kin_engine = KinematicEngine(window_seconds=window_sec)
 
-    async for tick in generator.stream():
+    async for tick in stream_generator:
         st.session_state.ring_buffer.append(tick)
         ticks = st.session_state.ring_buffer.get_all()
         
@@ -88,10 +115,14 @@ async def main_loop():
         fig = build_telemetry_chart(df, order_blocks, fvgs, s_vwap, r_vwap)
         chart_placeholder.plotly_chart(fig, use_container_width=True, key=f"plotly_chart_{time.time()}")
 
-        await asyncio.sleep(1.0 / tick_rate)
+        if mode == "Simulator Mode":
+            await asyncio.sleep(1.0 / tick_rate)
+
 
 if __name__ == "__main__":
     try:
         asyncio.run(main_loop())
     except Exception as e:
-        st.warning("Stream re-initializing...")
+        st.warning(f"Stream re-initializing due to connection reset: {e}")
+        time.sleep(1)
+        st.rerun()
