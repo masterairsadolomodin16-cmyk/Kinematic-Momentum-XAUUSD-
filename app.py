@@ -22,7 +22,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS presentation interface
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden;}
@@ -35,7 +34,6 @@ st.markdown("""
 if "ring_buffer" not in st.session_state:
     st.session_state.ring_buffer = RingBuffer(capacity=500)
 
-# Sidebar Controls
 st.sidebar.title("⚡ Control Center")
 mode = st.sidebar.radio("Data Stream Mode", ["Live APISED Feed (Real-Time)", "Simulator Mode"])
 tick_rate = st.sidebar.slider("Refresh Rate (Hz / Interval)", min_value=1, max_value=20, value=5)
@@ -48,6 +46,7 @@ st.title("Kinematic Momentum — XAUUSD Real-Time Telemetry")
 
 hud_placeholder = st.empty()
 chart_placeholder = st.empty()
+status_placeholder = st.empty()
 
 
 async def main_loop():
@@ -55,8 +54,10 @@ async def main_loop():
         api_key = os.getenv("APISED_API_KEY", "sk_Ef1FB50ec771Daf256E81B3d6Ede72c8857C123649454744")
         connector = APISEDLiveConnector(api_key=api_key, symbol="XAU", poll_interval=1.0 / tick_rate)
         stream_generator = connector.connect_and_stream()
+        status_placeholder.info("Connecting to APISED live stream...")
     else:
         stream_generator = SimulatedTickGenerator(initial_price=3994.00, tick_rate_hz=tick_rate).stream()
+        status_placeholder.empty()
 
     kin_engine = KinematicEngine(window_seconds=window_sec)
 
@@ -65,7 +66,10 @@ async def main_loop():
         ticks = st.session_state.ring_buffer.get_all()
 
         if len(ticks) < 3:
+            status_placeholder.warning(f"Accumulating tick buffer ({len(ticks)}/3)...")
             continue
+        else:
+            status_placeholder.empty()
 
         df = pd.DataFrame([t.model_dump() for t in ticks])
         df['mid'] = (df['bid'] + df['ask']) / 2.0
